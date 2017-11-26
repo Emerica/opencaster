@@ -1,5 +1,5 @@
-/*  
-	
+/*
+
  * Copyright (C) 2004-2013  Lorenzo Pallara, l.pallara@avalpa.com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,10 +19,14 @@
 
 #define _BSD_SOURCE 1
 
-#include <stdio.h> 
-#include <stdio_ext.h> 
+#include <stdio.h>
 #include <unistd.h> 
-#include <netinet/ether.h>
+#ifdef __APPLE__
+	#include <netinet/if_ether.h>
+#else
+	#include <netinet/ether.h>
+	#include <stdio_ext.h>
+#endif
 #include <netinet/in.h>
 #include <stdio.h>
 #include <string.h>
@@ -30,8 +34,8 @@
 #include <sys/types.h>
 #include <inttypes.h>
 
-#define ES_HEADER_SIZE 4 
-#define HEADER_MAX_SIZE 64 
+#define ES_HEADER_SIZE 4
+#define HEADER_MAX_SIZE 64
 
 const int rmax [4][5] = {
 		{ -1,  80000000,  -1,  -1, 100000000}, /* Mbps */
@@ -45,7 +49,7 @@ const int profile[8] = {
 				4, /* High */
 				3, /* Spatially Scalable */
 				2, /* SNR Scalable */
-				1, /* Main */	
+				1, /* Main */
 				0, /* Low */
 				-1,
 				-1,
@@ -71,7 +75,7 @@ const int level[16] = {
 };
 
 const double frame_sec[16] = {
-				1.0, 
+				1.0,
 				1/23.9,
 				1/24.0,
 				1/25.0,
@@ -101,7 +105,7 @@ int pop_frame(void){
 
 	int result;
 	queue* temp;
-	
+
 	if (g_queue) {
 		result = g_queue->value;
 		temp = g_queue->next;
@@ -115,16 +119,16 @@ int pop_frame(void){
 }
 
 void enqueue_frame(long long int index, int value) {
-    
+
 	queue* new_queue;
 	queue* temp;
-	
+
 	new_queue = (queue*) malloc(sizeof(queue));
 	new_queue->index = index;
 	new_queue->value = value;
 	new_queue->next = 0;
-	if (g_queue == 0) {					/* unique element */ 
-		g_queue = new_queue; 
+	if (g_queue == 0) {					/* unique element */
+		g_queue = new_queue;
 	} else if (g_queue->index > new_queue->index) {		/* smallest element */
 		new_queue->next = g_queue;
 		g_queue = new_queue;
@@ -146,8 +150,8 @@ int main(int argc, char *argv[]) {
 	int frame_size			= 0;		/* current frame size */
 	int error_reported		= 0;		/* set if error is already reported for this frame */
 	int error_counter		= 0;		/* count errors */
-	long int total_frames		= 0L;		/* frames counter */	
-	long int popped_frames		= 0L;		/* popped_frames */	
+	long int total_frames		= 0L;		/* frames counter */
+	long int popped_frames		= 0L;		/* popped_frames */
 	long int flush_delta_byte	= 0L;		/* delta byte counter between 2 buffer flushes */
 	int GOP_size			= 0;		/* current GOP size */
 	int GOP_frames			= 0;		/* current GOP number of frames */
@@ -164,32 +168,32 @@ int main(int argc, char *argv[]) {
 	int vbv_buffer_size		= -1;		/* size of the video buffer verifier in bit */
 	int vbv_current_size		= 0;		/* current fillness of the video buffer verifier in bit */
 	unsigned char es_header[HEADER_MAX_SIZE];	/* es header parsing buffer */
-	
+
 	/*  Parse args */
 	file_es = 0;
 	if (argc > 1) {
 		file_es = fopen(argv[1], "rb");
 		file_output = fopen("vbvData.dat", "w+");
-	} 
-	if (file_es == 0 ) { 
+	}
+	if (file_es == 0 ) {
 		fprintf(stderr, "Usage: 'vbv videofile.es'\n");
 		return 2;
 	}
-	
+
 	/* Process ES file */
 	byte_read = fread(es_header, 1, ES_HEADER_SIZE, file_es);
 	while(byte_read) {
 
-		/* Update counters */	
+		/* Update counters */
 		GOP_size += byte_read;
 		frame_size += byte_read;
-		vbv_current_size += byte_read * 8; 
+		vbv_current_size += byte_read * 8;
 		flush_delta_byte += byte_read;
-		
+
 		/* Get the current time and flush the buffer if necessary */
 		if (rbx != -1) {
 			flush_delta_time = flush_delta_byte * 8 / rbx;
-			if (flush_delta_time >= es_frame_rate) { 
+			if (flush_delta_time >= es_frame_rate) {
 				vbv_current_size -= pop_frame() * 8;
 				fprintf(file_output, "%ld\t%d\n", popped_frames, vbv_current_size / 1000);
 				popped_frames++;
@@ -197,7 +201,7 @@ int main(int argc, char *argv[]) {
 				flush_delta_byte = (flush_delta_time - es_frame_rate) * rbx / 8;
 			}
 		}
-		
+
 		/* Check the buffer status */
 		if (leakmethod != -1 && vbv_buffer_size != -1) {
 			if (vbv_current_size > vbv_buffer_size) {
@@ -216,26 +220,26 @@ int main(int argc, char *argv[]) {
 				error_reported = 1;
 			}
 		}
-		
+
 		/* Check headers */
 		if (es_header[0] == 0x00 && es_header[1] == 0x00 && es_header[2] == 0x01 && es_header[3] == 0x00) { /* Picture start header */
 
 			if (total_frames > 0) {
-				frame_size -= ES_HEADER_SIZE; 
-				enqueue_frame(total_frames + temporal_reference, frame_size); 
+				frame_size -= ES_HEADER_SIZE;
+				enqueue_frame(total_frames + temporal_reference, frame_size);
 				error_reported = 0;
-				/* 
-				 * I know, I know, tempral reference sometimes there is not, 
-				 * complain with yout encoder or write field/frame interlaced/progressive management ;-) 
+				/*
+				 * I know, I know, tempral reference sometimes there is not,
+				 * complain with yout encoder or write field/frame interlaced/progressive management ;-)
 				 *
 				 */
 				frame_size = ES_HEADER_SIZE;
 			}
-			
+
 			byte_read = fread(es_header, 1, 4, file_es);
                         temporal_reference = (es_header[0] << 2) | ((es_header[1] & 0xC0) >> 6);
 			vbv_delay = ((es_header[1] & 0x07) << 13 ) | (es_header[2] << 5) | ((es_header[3] & 0xf8) >> 3) ;
-			if (vbv_delay == 0xFFFF) { 
+			if (vbv_delay == 0xFFFF) {
 				/* rbx is fixed */
 				if (es_profile != -1 && es_level != -1 && res != -1 ) {
 					if (es_level == 2 || es_level == 3) { /* ML or LL */
@@ -247,13 +251,13 @@ int main(int argc, char *argv[]) {
 					}
 					leakmethod = 1;
 				}
-			} else { 
+			} else {
 				if (es_profile != -1 && es_level != -1 && res != -1 ) {
-					rbx = res; 
+					rbx = res;
 					/*
 					 *
 					 * rbx should be a linear interpolation between bytes and time passed and vbv_delay value as
-					 * shown in 13818-2 annex C, as a matter of fact encoders make it plain simple compliant to the nominal 
+					 * shown in 13818-2 annex C, as a matter of fact encoders make it plain simple compliant to the nominal
 					 * bit rate and the buffer fillness to be standard without giving any futher real bit rate hint.
 					 *
 					 *
@@ -266,15 +270,15 @@ int main(int argc, char *argv[]) {
 			}
 			GOP_frames++;
 			total_frames++;
-			
+
 			byte_read += fread(es_header, 1, ES_HEADER_SIZE, file_es);
-			
+
 		} else if (es_header[0] == 0x00 && es_header[1] == 0x00 && es_header[2] == 0x01 && es_header[3] == 0xB3) { /* Sequence video header */
 
 			byte_read = fread(es_header, 1, 8, file_es);
 
 			es_frame_rate = frame_sec[(es_header[3] & 0x0F)];
-				
+
 			res = ((es_header[4] << 10) | (es_header[5] << 2) | ((es_header[6] & 0xC0) >> 6)) * 400;
 			if (rbx == -1) {
 				rbx = res; /* best guess until now and maybe the only one ... */
@@ -288,19 +292,19 @@ int main(int argc, char *argv[]) {
 			} else if (es_header[7] & 0x01) {
 				byte_read += fread(es_header, 1, 64, file_es); /* non-intra quantiser matrix */
 			}
-			
+
 			byte_read += fread(es_header, 1, ES_HEADER_SIZE, file_es);
-	
+
 			if (es_header[0] == 0x00 && es_header[1] == 0x00 && es_header[2] == 0x01 && es_header[3] == 0xB5) { /* Sequence extension */
 				byte_read += fread(es_header, 1, 6, file_es);
-			
+
 				es_profile = profile[es_header[0] & 0x07];
 				es_level = level[(es_header[1] & 0xF0) >> 4];
-			
+
 				byte_read += fread(es_header, 1, ES_HEADER_SIZE, file_es);
 			}
 
-		} else if (es_header[0] == 0x00 && es_header[1] == 0x00 && es_header[2] == 0x01 && es_header[3] == 0xB8) { /* GOP video header */		
+		} else if (es_header[0] == 0x00 && es_header[1] == 0x00 && es_header[2] == 0x01 && es_header[3] == 0xB8) { /* GOP video header */
 
                         if (GOP_size > ES_HEADER_SIZE) { /* it's the second header so we have a GOP between them */
 				if (es_frame_rate != -1) {
@@ -310,19 +314,18 @@ int main(int argc, char *argv[]) {
 				GOP_frames = 0;
 			}
 			byte_read = fread(es_header, 1, ES_HEADER_SIZE, file_es);
-		
+
 		} else { /* 1 byte step */
-		
+
 			es_header[0] = es_header[1];
 			es_header[1] = es_header[2];
 			es_header[2] = es_header[3];
 			byte_read = fread(es_header + 3, 1, 1, file_es);
 		}
 	}
-	
+
 	fprintf(stdout, "check done, found %d errors.\n", error_counter);
 	fclose(file_output);
 
 	return 0;
 }
-

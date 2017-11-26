@@ -1,4 +1,4 @@
-/*  
+/*
  * Copyright (C) 2004-2013  Lorenzo Pallara, l.pallara@avalpa.com
  *
  * This program is free software; you can redistribute it and/or
@@ -18,10 +18,14 @@
 
 #define _BSD_SOURCE 1
 
-#include <stdio.h> 
-#include <stdio_ext.h> 
+#include <stdio.h>
 #include <unistd.h> 
-#include <netinet/ether.h>
+#ifdef __APPLE__
+	#include <netinet/if_ether.h>
+#else
+	#include <netinet/ether.h>
+	#include <stdio_ext.h>
+#endif
 #include <netinet/in.h>
 #include <stdio.h>
 #include <string.h>
@@ -49,13 +53,13 @@ int main(int argc, char *argv[])
 	file_i1394 = 0;
 	if (argc > 1) {
 		file_i1394 = fopen(argv[1], "rb");
-	} 
-	
-	if (file_i1394 == 0) { 
+	}
+
+	if (file_i1394 == 0) {
 		fprintf(stderr, "Usage: 'i13942ts file.iso', where .iso is a ieee1394-6 dump\n");
 		return 2;
 	}
-	
+
 	/* Process the i1394 file */
 	byte_read = fread(i1394_header, 1, I1394_HEADER_SIZE, file_i1394);
 	while (byte_read) {
@@ -76,4 +80,3 @@ int main(int argc, char *argv[])
 
 	return 0;
 }
-

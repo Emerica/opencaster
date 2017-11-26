@@ -11,9 +11,10 @@
 #include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <net/if.h>
-
-#include <net/if_tun.h>
-
+#ifdef __APPLE__
+#else
+  #include <net/if_tun.h>
+#endif
 #include "sectioncrc.h"
 
 /* pre 2.4.6 compatibility */

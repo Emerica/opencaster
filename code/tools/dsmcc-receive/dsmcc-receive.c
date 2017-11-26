@@ -18,10 +18,14 @@
 
 #define _BSD_SOURCE 1
 
-#include <stdio.h> 
-#include <stdio_ext.h> 
+#include <stdio.h>
 #include <unistd.h> 
-#include <netinet/ether.h>
+#ifdef __APPLE__
+	#include <netinet/if_ether.h>
+#else
+	#include <netinet/ether.h>
+	#include <stdio_ext.h>
+#endif
 #include <netinet/in.h>
 #include <stdio.h>
 #include <string.h>
@@ -48,7 +52,7 @@ main(int argc, char *argv[])
     int result = 0;
     int pid = 0;
     int component_tag = 0;
-    
+
     if (argc != 5) {
 	usage(argv[0]);
 	return 0;
@@ -58,9 +62,9 @@ main(int argc, char *argv[])
 	pid = atoi(argv[3]);
 	component_tag = atoi(argv[4]);
     }
-    
+
     struct carousel a_carousel;
-    
+
     a_carousel.timeout = 60; /* 1 minute, not used for dsmcc-receive */
     a_carousel.service_id = 1; /* not used for dsmcc-receive */
     a_carousel.carousel_id = 0; /* not used for dsmcc-receive */
@@ -73,10 +77,10 @@ main(int argc, char *argv[])
     a_carousel.completed = 0;
     a_carousel.current_pid = pid; /* not used for dsmcc-receive */
     add_dsmcc_pid(&a_carousel, pid); /* a carousel can be received from multiple PIDs, add the first we have found, this must carry DSI table or won't load */
-    init_assoc(&(a_carousel.assoc)); 
+    init_assoc(&(a_carousel.assoc));
     add_assoc(&(a_carousel.assoc), pid, component_tag); /* set the mapping between stream_id_descriptors and elementary_PIDs, not used for dsmcc-receive */
-    
-    set_verbose(1); /* 1, 2, 3 */    
+
+    set_verbose(1); /* 1, 2, 3 */
 
     fprintf(stdout, "info: loading carousel on directory %s\n", directory);
 
@@ -89,13 +93,13 @@ main(int argc, char *argv[])
      * where <PID> is the PID the carousel was downloaded from
      * and <CID> is the Carousel ID
      */
-    
+
     result = load_carousel(directory, &(a_carousel), cachesize);
 
-    clean_assoc(&(a_carousel.assoc)); 
+    clean_assoc(&(a_carousel.assoc));
 
     fprintf(stdout, "info: load carousel done\n");
-    
+
     return result;
 }
 
@@ -104,4 +108,3 @@ usage(char *prog_name)
 {
 	fatal("Usage: %s output_directory cache_size pid component_tag < file.sec", prog_name);
 }
-

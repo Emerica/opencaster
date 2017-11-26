@@ -1,4 +1,4 @@
-/* 
+/*
  * Copyright (C) 2009-2013  Lorenzo Pallara, l.pallara@avalpa.com
  *
  * This program is free software; you can redistribute it and/or
@@ -18,10 +18,14 @@
 
 #define _BSD_SOURCE 1
 
-#include <stdio.h> 
-#include <stdio_ext.h> 
+#include <stdio.h>
 #include <unistd.h> 
-#include <netinet/ether.h>
+#ifdef __APPLE__
+	#include <netinet/if_ether.h>
+#else
+	#include <netinet/ether.h>
+	#include <stdio_ext.h>
+#endif
 #include <netinet/in.h>
 #include <stdio.h>
 #include <string.h>
@@ -39,13 +43,13 @@
 #define MAX_PID 8192
 #define PTS_TIME 90000LL
 #define PES_HEADER_SIZE 4
-#define TS_HEADER_SIZE 4 
+#define TS_HEADER_SIZE 4
 #define TS_PACKET_SIZE 188
 #define TS_PACKET_BODY (TS_PACKET_SIZE - TS_HEADER_SIZE)
 
 #define SYSTEM_CLOCK_FREQUENCY 27000000
 #define PTS_MAX 8589934592LL
-#define PACK_HEADER_SIZE 4 
+#define PACK_HEADER_SIZE 4
 #define TIME_STAMP_SIZE 5
 #define MAX_FD 256
 
@@ -83,15 +87,15 @@ unsigned long long parse_timestamp(unsigned char *buf)
 	a2 = ((buf[1] << 8) | buf[2]) >> 1;
 	a3 = ((buf[3] << 8) | buf[4]) >> 1;
 	ts = (a1 << 30) | (a2 << 15) | a3;
-	
+
 	return ts;
 }
 
-void stamp_ts (unsigned long long int ts, unsigned char* buffer) 
+void stamp_ts (unsigned long long int ts, unsigned char* buffer)
 {
 	if (buffer) {
 		buffer[0] = ((ts >> 29) & 0x0F) | 0x01;
-		buffer[1] = (ts >> 22) & 0xFF; 
+		buffer[1] = (ts >> 22) & 0xFF;
 		buffer[2] = ((ts >> 14) & 0xFF ) | 0x01;
 		buffer[3] = (ts >> 7) & 0xFF;
 		buffer[4] = ((ts << 1) & 0xFF ) | 0x01;
@@ -104,20 +108,20 @@ void restamp_and_output(void) {
 	unsigned char timestamp[TIME_STAMP_SIZE];
 	int ts_header_size = 0;
 	unsigned long long time = 0;
-	
+
 	adapt = (ts_packet[3] >> 4) & 0x03;
 	if (adapt == 0) {
 		ts_header_size = TS_PACKET_SIZE; /* the packet is invalid ?*/
 	} else if (adapt == 1) {
 		ts_header_size = TS_HEADER_SIZE; /* only payload */
-	} else if (adapt == 2) { 
+	} else if (adapt == 2) {
 		ts_header_size = TS_PACKET_SIZE; /* only adaptation field */
 	} else if (adapt == 3) {
 		ts_header_size = TS_HEADER_SIZE + ts_packet[4] + 1; /* jump the adaptation field */
 	} else {
 		ts_header_size = TS_PACKET_SIZE; /* not managed */
 	}
-	
+
 	if (ts_header_size < TS_PACKET_SIZE - 9 - TIME_STAMP_SIZE) {
 		if ((ts_packet[ts_header_size] == 0x00) && (ts_packet[ts_header_size + 1] == 0x00) && (ts_packet[ts_header_size + 2] == 0x01) && ((ts_packet[ts_header_size + 3] >> 5) == 0x06)) {
 			if (pes_frame_size == (ts_packet[ts_header_size + 4] << 8 | ts_packet[ts_header_size + 5])) {
@@ -140,7 +144,7 @@ void restamp_and_output(void) {
 					pts = pts_offset + ((frame_number * sample_per_frame * PTS_TIME) / sample_rate);
 					stamp_ts(pts % PTS_MAX, ts_packet + ts_header_size + 9);
 					frame_number++;
-					ts_packet[ts_header_size + 9] &= 0x0F; 
+					ts_packet[ts_header_size + 9] &= 0x0F;
 					ts_packet[ts_header_size + 9] |= 0x20;
 				}
 				memcpy(timestamp, ts_packet + ts_header_size + 9, TIME_STAMP_SIZE);
@@ -151,7 +155,7 @@ void restamp_and_output(void) {
 			}
 		}
 	}
-	
+
 	write(STDOUT_FILENO, ts_packet, TS_PACKET_SIZE);
 	ts_packets++;
 }
@@ -162,28 +166,28 @@ void send_current_packet(void) {
 	u_char temp;
 
 	if (TS_HEADER_SIZE + ts_payload == TS_PACKET_SIZE) { /* filled case */
-	
+
 		ts_packet[3] = ts_continuity_counter | 0x10; /* continuity counter, no scrambling, only payload */
 		ts_continuity_counter = (ts_continuity_counter + 1) % 0x10; /* inc. continuity counter */
 		restamp_and_output();
 		ts_payload = 0;
-		
+
 	} else if (TS_HEADER_SIZE + ts_payload + 1 == TS_PACKET_SIZE) { /* payload too big: two packets are necessary */
-	
-		temp = ts_packet[TS_HEADER_SIZE + ts_payload - 1]; /* copy the exceeding byte */ 
+
+		temp = ts_packet[TS_HEADER_SIZE + ts_payload - 1]; /* copy the exceeding byte */
 		ts_payload--;
 		send_current_packet();
-		
+
 		memcpy(ts_packet + 1, &pid, 2); /* pid, no pusu */
 		ts_packet[4] = temp;
 		ts_payload = 1;
 		send_current_packet();
-		
+
 	} else { /* padding is necessary */
-	
+
 		ts_packet[3] = ts_continuity_counter | 0x30; /* continuity counter, no scrambling, adaptation field and payload */
 		ts_continuity_counter = (ts_continuity_counter + 1) % 0x10; /* inc. continuity counter */
-		
+
 		for (i = 0; i < ts_payload; i++) { /* move the payload at the end */
 			ts_packet[TS_PACKET_SIZE - 1 - i] = ts_packet[TS_HEADER_SIZE + ts_payload - 1 - i];
 		}
@@ -214,7 +218,7 @@ FILE* openStream(char* argv[], int open_counter, FILE* file_pes[]) {
 		        /* fprintf(stderr, "is a fifo\n"); */
 		}
 	}
-	
+
 	return result;
 }
 
@@ -234,24 +238,24 @@ void  closeStream(char* argv[], int open_counter, FILE* file_pes[]) {
 		fclose(file_pes[open_counter]);
 		/* fprintf(stderr, "closed but now is missing\n"); */
 	}
-	
-	
+
+
 }
 
 int main(int argc, char *argv[])
 {
 
-	int i;	
+	int i;
 	int loop_on = 0;
 	int byte_read;
-	int total_bytes = 0; 
+	int total_bytes = 0;
 	unsigned long long left_packet = 0;
 	int open_counter = 0;
 	char filelength[PATH_MAX];
 	FILE* file_pes[MAX_FD];
 	FILE* current_file_pes;
 	memset(file_pes, 0, sizeof(FILE*) * MAX_FD);
-	
+
 	/*  Parse args */
 	pid = MAX_PID;
 	current_file_pes = 0;
@@ -264,9 +268,9 @@ int main(int argc, char *argv[])
 			pts_step = atoi(argv[4]+3);
 		}
 		loop_on = atoi(argv[5]) > 0;
-		current_file_pes = fopen(argv[6], "r");		
+		current_file_pes = fopen(argv[6], "r");
 		file_pes[0] = current_file_pes;
-		snprintf(filelength, PATH_MAX, "%s.length", argv[6]);		
+		snprintf(filelength, PATH_MAX, "%s.length", argv[6]);
 		if (current_file_pes == NULL) {
 			/* fprintf(stderr, "pesaudio2ts: failed to open file %s\n", argv[6]); */
 			return 0;
@@ -277,9 +281,9 @@ int main(int argc, char *argv[])
 		} else {
 			pid = htons(pid);
 		}
-	} 
+	}
 	pts_offset = pts_step;
-	
+
 	/* fifo are all open at the begin */
 	for (i = 7; i < argc; i++) {
 		struct stat file_stat;
@@ -299,7 +303,7 @@ int main(int argc, char *argv[])
 			file_pes[i - 6] = NULL;
 		}
 	}
-	
+
 	if (argc < 6) {
 		fprintf(stderr, "Usage: 'pesaudio2ts pid sample_per_frame sample_rate es_frame_size[:video_pts_step] loop_on input1.pes [input2.pes ... ]', where pid is bounded from 1 to 8191\n");
 		fprintf(stderr, "if loop_on is 1 after the last input.pes will start again from the first, video synch works only with mpeg2 video files\n");
@@ -307,14 +311,14 @@ int main(int argc, char *argv[])
 		fprintf(stderr, "input*.pes.length is scan for a pts value, if present the value is used to adjust single pes length adding null packets to sync at that pts\n");
 		return 0;
 	}
-	
+
 	/* Init null packet */
 	memset(null_ts_packet, 0, TS_PACKET_SIZE);
 	null_ts_packet[0] = 0x47;
 	null_ts_packet[1] = 0x1F;
 	null_ts_packet[2] = 0xFF;
 	null_ts_packet[3] = 0x10;
-	
+
 	/* Need to output some null packets to synch to the first pts */
 	pes_frame_size = frame_size + 8; /* only payload */
 	frame_size += 14; /* pes header */
@@ -329,17 +333,17 @@ int main(int argc, char *argv[])
 		write(STDOUT_FILENO, null_ts_packet, TS_PACKET_SIZE);
 		ts_packets++;
 	}
-	
+
 	/* Set some init. values */
 	left_packet = 0;
 	ts_payload = 0;
 	look_ahead_size = 0;
-	ts_continuity_counter = 0x0; 
-	ts_packet[0] = 0x47; /* sync byte */ 
+	ts_continuity_counter = 0x0;
+	ts_packet[0] = 0x47; /* sync byte */
 	memcpy(ts_packet + 1, &pid, 2); /* pid */
 	ts_packet[1] |= 0x40; /* payload unit start indicator */
 	byte_read = 1;
-	
+
 	/* Process the PES file */
 	byte_read = fread(look_ahead_buffer + look_ahead_size, 1, PES_HEADER_SIZE, current_file_pes);
 	if (byte_read > 0) {
@@ -349,33 +353,33 @@ int main(int argc, char *argv[])
 	}
 
 	look_ahead_size = byte_read;
-	
+
 	int head_missing = 0;
 	while (!head_missing) {
 		while ((byte_read || look_ahead_size) && !head_missing) {
-		
+
 			/* Fill the look ahead buffer */
 			if (look_ahead_size < PES_HEADER_SIZE && current_file_pes != NULL) {
 				byte_read = fread(look_ahead_buffer + look_ahead_size, 1, 1, current_file_pes);
-				
+
 				if (byte_read > 0) {
 					total_bytes += byte_read;
 				} else {
 					/* fprintf(stderr, "pesaudio2ts: audio read was %d in the processing, look_ahead is %d\n", byte_read, look_ahead_size);  */
 				}
-			
+
 				if (byte_read <= 0 && loop_on) {
 					closeStream(argv, open_counter, file_pes);
 					current_file_pes = NULL;
 					open_counter++;
 					/* fprintf(stderr, "pesaudio2ts %s total bytes was %d\n", filelength, total_bytes); */
 					total_bytes = 0;
-				
+
 					/* it is necesseary to set next pts time to a multiple of pts frame rate, frame rate is assumed 25fps */
 					/* it also assume audio ends before video */
 					unsigned long long next_pts = pts_offset + ((frame_number * sample_per_frame * PTS_TIME) / sample_rate);
 					unsigned long long next_pts_rounded_to_next_video_frame = 0;
-				
+
 					/* NB. this is the pes length of the file just closed */
 					/* fprintf(stderr, "Audio: looking for end file %s\n", filelength);  */
 					FILE* file = fopen(filelength, "r");
@@ -387,7 +391,7 @@ int main(int argc, char *argv[])
 						/* fprintf(stderr, "pesaudio2ts warning: missed %s file\n", filelength); */
 						next_pts_rounded_to_next_video_frame = ((next_pts / pts_step) + 1) * pts_step;
 					}
-				
+
 					if (argc >= 6 + open_counter) {
 						current_file_pes = openStream(argv, open_counter, file_pes);
 						if (current_file_pes == NULL) {
@@ -396,7 +400,7 @@ int main(int argc, char *argv[])
 							snprintf(filelength, PATH_MAX, "%s.length", argv[6 + open_counter]);
 						}
 					}
-				
+
 					if (current_file_pes == NULL) {
 						open_counter = 0;
 						current_file_pes = openStream(argv, open_counter, file_pes);
@@ -406,30 +410,30 @@ int main(int argc, char *argv[])
 							snprintf(filelength, PATH_MAX, "%s.length", argv[6]);
 						}
 					}
-				
+
 					if (current_file_pes != NULL) {
 						fprintf(stderr, "pesaudio2ts sync: %s new presented audio frame will be at %llu, %llu.%04llu sec., last presented audio frame was at %llu, %llu.%04llu sec.\n",
 						argv[6 + open_counter],
-						next_pts_rounded_to_next_video_frame % PTS_MAX, 
+						next_pts_rounded_to_next_video_frame % PTS_MAX,
 						(next_pts_rounded_to_next_video_frame % PTS_MAX) / PTS_TIME, ((next_pts_rounded_to_next_video_frame % PTS_MAX) % PTS_TIME) / (PTS_TIME / 10000),
 						next_pts % PTS_MAX,
 						(next_pts % PTS_MAX) / PTS_TIME, ((next_pts % PTS_MAX) % PTS_TIME) / (PTS_TIME / 10000));
 					}
-				
+
 					/*
 					int null_packets =  (((next_pts_rounded_to_next_video_frame - next_pts) * bitrate) + left_packet) / (PTS_TIME * 8 * TS_PACKET_SIZE);
 					left_packet = ((next_pts_rounded_to_next_video_frame - next_pts) * bitrate + left_packet) % (PTS_TIME * 8 * TS_PACKET_SIZE);
 					fprintf(stderr, "need to output %d null packets to sync\n", null_packets);
 					fprintf(stderr, "left %llu byte left to next round to sync\n", left_packet);
 					*/
-				
+
 					/* expected overflown after 6.4 years at 1mbps */
 					int null_packets =  (left_packet + (next_pts_rounded_to_next_video_frame * bitrate)) / (PTS_TIME * 8 * TS_PACKET_SIZE); /* packets to next pts */
 					null_packets -= ts_packets; /* packets sent */
 					null_packets -= (frame_size / TS_PACKET_SIZE) + 1 ; /* + 1 the first audio frame packets needs to be there at the next pts */
 					/* null_packets -= 1 ; // the first audio frame packet needs to be there at the next pts */
 					left_packet = (left_packet + (next_pts_rounded_to_next_video_frame * bitrate)) % (PTS_TIME * 8 * TS_PACKET_SIZE);
-				
+
 					/* fprintf(stderr, "need to output %d null packets to sync\n", null_packets); */
 					int i = 0;
 					/* fprintf(stderr, "sending on output %d null packets, frame size is %d packets, left packet is %llu\n", null_packets, (frame_size / TS_PACKET_SIZE), left_packet);  */
@@ -438,11 +442,11 @@ int main(int argc, char *argv[])
 						ts_packets++;
 					}
 					/* fprintf(stderr, "sent on output %d null packets, frame size is %d packets, left packet is %llu\n", null_packets, (frame_size / TS_PACKET_SIZE), left_packet); */
-				
+
 					if (current_file_pes != NULL) {
 						byte_read = fread(look_ahead_buffer + look_ahead_size, 1, 1, current_file_pes);
 						if (byte_read > 0) {
-							total_bytes += byte_read; 
+							total_bytes += byte_read;
 							frame_number = 0;
 							pts_offset = next_pts_rounded_to_next_video_frame;
 						} else {
@@ -457,14 +461,14 @@ int main(int argc, char *argv[])
 				}
 				look_ahead_size += byte_read;
 			}
-		
+
 			/* PES header detected? */
-			if (look_ahead_size == PES_HEADER_SIZE && 
-				look_ahead_buffer[0] == 0x00 && 
-				look_ahead_buffer[1] == 0x00 && 
-				look_ahead_buffer[2] == 0x01 && 
-				look_ahead_buffer[3] == 0xC0 ) { 
-//				(((look_ahead_buffer[3] >> 4) == 0x0E) || ((look_ahead_buffer[3] >> 5) == 0x06))) { 
+			if (look_ahead_size == PES_HEADER_SIZE &&
+				look_ahead_buffer[0] == 0x00 &&
+				look_ahead_buffer[1] == 0x00 &&
+				look_ahead_buffer[2] == 0x01 &&
+				look_ahead_buffer[3] == 0xC0 ) {
+//				(((look_ahead_buffer[3] >> 4) == 0x0E) || ((look_ahead_buffer[3] >> 5) == 0x06))) {
 				/* Send current packet if there's anything ready */
 				if (ts_payload) {
 					send_current_packet();
@@ -473,7 +477,7 @@ int main(int argc, char *argv[])
 				memcpy(ts_packet + 1, &pid, 2); /* pid */
 				ts_packet[1] |= 0x40; /* payload unit start indicator */
 			}
-	
+
 			/* Fill the current packet */
 			if (look_ahead_size > 0 && ((!loop_on) || (loop_on && byte_read > 0))) {
 				/* Move a packet from the lookahead to the current packet */
@@ -483,28 +487,28 @@ int main(int argc, char *argv[])
 					look_ahead_buffer[i] = look_ahead_buffer[i + 1];
 				}
 				look_ahead_size--;
-		
+
 				/* Send the packet if it's filled */
 				if (TS_HEADER_SIZE + ts_payload == TS_PACKET_SIZE) {
-					
+
 					send_current_packet();
-					
+
 					/* Unset pusu for the next packet */
 					memcpy(ts_packet + 1, &pid, 2); /* pid */
 				}
 			}
-	
+
 			/* Send the last packet with the last bytes if any */
 			if (byte_read == 0 && look_ahead_size == 0 && ts_payload) {
 				send_current_packet();
-			} 
-		
+			}
+
 		}
-		
+
 		/* try to re-open and block if fifo and on-loop */
 		for (i = 6; i < argc && loop_on; i++) {
 			struct stat file_stat;
-			if (lstat(argv[i], &file_stat) == 0) { 
+			if (lstat(argv[i], &file_stat) == 0) {
 				if (S_ISFIFO(file_stat.st_mode)) {
 					fclose(file_pes[i - 6]);
 				}
@@ -532,13 +536,13 @@ int main(int argc, char *argv[])
 				file_pes[i - 6] = NULL;
 			}
 		}
-		
+
 		if (!loop_on) {
 			head_missing = 1;
 		}
-		
+
 		current_file_pes = file_pes[0];
-		
+
 		/*
 		if (!head_missing) {
 			byte_read = fread(look_ahead_buffer + look_ahead_size, 1, PES_HEADER_SIZE, current_file_pes);
@@ -548,7 +552,7 @@ int main(int argc, char *argv[])
 			}
 		}
 		*/
-	
+
 	}
 	return 0;
 }
