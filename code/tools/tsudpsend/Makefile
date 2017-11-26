@@ -1,6 +1,14 @@
 C      = gcc
 CFLAGS  += -g -MD -Wall -I. -I../../include -D_FILE_OFFSET_BITS=64 $(CPPFLAGS)
+UNAME := $(shell uname)
+
+ifeq ($(UNAME), Darwin)
 LDFLAGS  += -lc
+endif
+
+ifeq ($(UNAME), Linux)
+LDFLAGS  += -lc -lrt
+endif
 
 OBJS = tsudpsend.o
 TARGET = tsudpsend
