@@ -13,7 +13,7 @@
 #include <net/if.h>
 #ifdef __APPLE__
 #else
-  #include <net/if_tun.h>
+  #include <linux/if_tun.h>
 #endif
 #include "sectioncrc.h"
 
